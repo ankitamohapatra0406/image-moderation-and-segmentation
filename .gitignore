@@ -2,3 +2,8 @@ venv/
 __pycache__/
 *.pyc
 safe_images/
+ml/data/
+ml/runs/
+ml/weights/
+*.pt
+*.zip
