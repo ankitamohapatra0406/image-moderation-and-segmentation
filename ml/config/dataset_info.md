@@ -10,7 +10,7 @@ We are detecting these objects:
 - alcohol_bottle
 
 ## Source
-- Images collected from [Roboflow project name here] or internal sources.
+- Images collected from [image-moderation-detector]
 - Annotated with bounding boxes (object detection).
 
 ## Format
