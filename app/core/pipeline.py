@@ -11,10 +11,10 @@ from app.core.image_utils import blur_with_mask
 
 class ModerationPipeline:
     """
-    1. Classify → possible violation?
-    2. Detect → violating boxes
-    3. Segment → precise masks
-    4. Blur → only masked regions
+    1. Classify - possible violation?
+    2. Detect - violating boxes
+    3. Segment - precise masks
+    4. Blur - only masked regions
     """
 
     def __init__(self, output_dir: str = "safe_images"):
@@ -65,13 +65,29 @@ class ModerationPipeline:
 
     @staticmethod
     def _filter_violations(detections):
-        violating_labels = {"nudity_explicit", "cigarette", "weapon", "smoking"}
-        threshold = 0.5
-        out = []
-        for d in detections:
-            if d.get("label") in violating_labels and d.get("score", 0) >= threshold:
-                out.append(d)
-        return out
+        violating_labels = {
+            "cigarette",
+            "vape",
+            "joint",
+            "gun",
+            "knife",
+            "alcohol_bottle",
+            "nudity_explicit",
+        }
+        threshold = 0.3
+
+        if not detections:
+            return []
+
+        filtered = [
+            d for d in detections
+            if isinstance(d, dict)
+            and d.get("label") in violating_labels
+            and float(d.get("score", 0)) >= threshold
+        ]
+        return filtered
+
+
 
     def _save_image(self, image: Image.Image) -> str:
         filename = f"{uuid.uuid4().hex}.png"
