@@ -7,3 +7,8 @@ ml/runs/
 ml/weights/
 *.pt
 *.zip
+app/models/weights/*.pt
+ml/weights/*.pt
+app/models/weights/detector_best.pt
+
+
