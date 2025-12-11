@@ -22,123 +22,118 @@
 
 # app/models/detector.py
 
-# app/models/detector.py
 import os
-from typing import List, Dict, Union
+from typing import List, Dict, Any, Optional
+
 from PIL import Image
-import numpy as np
 
 try:
     from ultralytics import YOLO
+    _HAS_ULTRALYTICS = True
 except Exception:
-    YOLO = None
+    YOLO = None  
+    _HAS_ULTRALYTICS = False
+
+
+DEFAULT_WEIGHTS = os.path.join(
+    os.path.dirname(__file__), "weights", "detector_best.pt"
+)
 
 
 class ViolationDetector:
     """
-    YOLOv8 wrapper that loads weights from models/weights/detector_best.pt
-    and exposes a .predict(image) method.
-
-    Accepts image as:
-      - PIL.Image.Image
-      - file path (str)
-      - numpy array (H,W,C) uint8
-
-    Returns list of dicts:
-      [{ "label": "knife", "score": 0.92, "bbox": [x1, y1, x2, y2] }, ...]
+    Loads a YOLO model (ultralytics) and exposes .predict(pil_image) -> List[dict]
+    Each dict: {"label": str, "score": float, "bbox": [x1,y1,x2,y2]}
     """
 
-    def __init__(self, weights_filename: str = "detector_best.pt", conf: float = 0.25):
-        if YOLO is None:
-            raise RuntimeError(
-                "ultralytics package not found. Install it with `pip install ultralytics`."
-            )
+    def __init__(self, weights_path: Optional[str] = None, device: Optional[str] = None):
+        if weights_path is None:
+            weights_path = DEFAULT_WEIGHTS
+        self.weights_path = weights_path
+        self.device = device 
 
-        base_dir = os.path.dirname(__file__)
-        self.weights_path = os.path.join(base_dir, "weights", weights_filename)
-        if not os.path.exists(self.weights_path):
-            raise FileNotFoundError(f"Model weights not found at {self.weights_path}")
-
-        self._model = None
-        self._conf = float(conf)
-        self._names = None
-
-    def _load_model(self):
-        if self._model is None:
-            # instantiate YOLO model (this loads weights)
-            self._model = YOLO(self.weights_path)
-            # Try to grab names (class id -> label)
-            self._names = getattr(self._model, "names", None)
-            if self._names is None:
-                # fallback to wrapped model attribute (API differences)
+        if _HAS_ULTRALYTICS:
+            if os.path.exists(self.weights_path):
+                # YOLO will auto-download a model if a known tag is passed,
+                # but here we're pointing at local weights (best.pt)
                 try:
-                    self._names = getattr(self._model.model, "names", None)
+                    if self.device:
+                        self.model = YOLO(self.weights_path, device=self.device)  
+                    else:
+                        self.model = YOLO(self.weights_path) 
+                    self.names = getattr(self.model, "names", {})
+                    self.ready = True
                 except Exception:
-                    self._names = None
+                    self.model = None
+                    self.names = {}
+                    self.ready = False
+            else:
+                self.model = None
+                self.names = {}
+                self.ready = False
+        else:
+            self.model = None
+            self.names = {}
+            self.ready = False
 
-    def _ensure_image(self, image: Union[Image.Image, str, np.ndarray]) -> Union[Image.Image, str, np.ndarray]:
-        # if path string, return as-is (ultralytics accepts file paths)
-        if isinstance(image, str):
-            return image
-        # numpy array - pass-through
-        if isinstance(image, np.ndarray):
-            return image
-        # PIL - ensure RGB
-        if isinstance(image, Image.Image):
-            if image.mode != "RGB":
-                image = image.convert("RGB")
-            return image
-        raise TypeError("Unsupported image type. Provide PIL.Image, image path (str) or numpy array.")
-
-    def predict(self, image: Union[Image.Image, str, np.ndarray], conf: float = None) -> List[Dict]:
+    def predict(self, pil_image: Image.Image) -> List[Dict[str, Any]]:
         """
-        Run detection and return list of dicts with keys: label, score, bbox (x1,y1,x2,y2)
+        Run detection on a PIL image and return detections in the format:
+        [{ "label": "cigarette", "score": 0.92, "bbox": [x1, y1, x2, y2] }, ...]
         """
-        self._load_model()
-        conf = self._conf if conf is None else float(conf)
-
-        img = self._ensure_image(image)
-
-        # run prediction; ultralytics returns a list of Results for each input (we pass one)
-        results = self._model.predict(source=img, conf=conf, verbose=False)
-
-        if not results:
+        if not self.ready or self.model is None:
             return []
 
-        r = results[0]  # single image result
-        boxes = getattr(r, "boxes", None)
-        if boxes is None:
+        # ultralytics models accept PIL images directly
+        try:
+            results = self.model(pil_image)  # run inference
+        except Exception:
             return []
-
-        # Convert tensors to numpy when available
-        # boxes.xyxy, boxes.conf, boxes.cls
-        try:
-            xyxy = boxes.xyxy.cpu().numpy()
-        except Exception:
-            xyxy = np.array(boxes.xyxy)
-
-        try:
-            scores = boxes.conf.cpu().numpy()
-        except Exception:
-            scores = np.array(boxes.conf)
-
-        try:
-            cls_inds = boxes.cls.cpu().numpy().astype(int)
-        except Exception:
-            cls_inds = np.array(boxes.cls).astype(int)
 
         out = []
-        for (x1, y1, x2, y2), score, cls in zip(xyxy, scores, cls_inds):
-            if self._names:
-                label = self._names[int(cls)] if int(cls) in self._names else str(int(cls))
-            else:
-                label = str(int(cls))
+        # results is an ultralytics.Results object (sequence). Usually first element is for the input image.
+        # Iterate found boxes in results[0].boxes
+        try:
+            r0 = results[0]
+            boxes = getattr(r0, "boxes", None)
+            if boxes is None:
+                return out
 
-            out.append({
-                "label": label,
-                "score": float(score),
-                "bbox": [int(x1), int(y1), int(x2), int(y2)]
-            })
+            # each box has .xyxy, .conf, .cls attributes
+            for b in boxes:
+                # xyxy may be a tensor with shape (4,) or (1,4) depending on version; handle robustly
+                try:
+                    xy = b.xyxy[0].tolist()
+                except Exception:
+                    # fallback: convert whole xyxy to list and use first entry
+                    try:
+                        xy = list(map(float, b.xyxy.tolist()[0]))
+                    except Exception:
+                        continue
+                # convert to floats
+                x1, y1, x2, y2 = float(xy[0]), float(xy[1]), float(xy[2]), float(xy[3])
+
+                # confidence and class
+                try:
+                    conf = float(b.conf[0]) if hasattr(b, "conf") else float(b.conf)
+                except Exception:
+                    # try alternative attribute
+                    conf = float(getattr(b, "confidence", 0.0) or 0.0)
+
+                try:
+                    cls_idx = int(b.cls[0]) if hasattr(b, "cls") else int(b.cls)
+                except Exception:
+                    cls_idx = None
+
+                label = str(self.names.get(cls_idx, cls_idx)) if cls_idx is not None else "unknown"
+
+                out.append({"label": label, "score": conf, "bbox": [x1, y1, x2, y2]})
+        except Exception:
+            return out
 
         return out
 
+
+# convenience factory so other code can do `from app.models.detector import get_detector`
+def get_detector(weights_path: Optional[str] = None, device: Optional[str] = None) -> ViolationDetector:
+    return ViolationDetector(weights_path=weights_path, device=device)

@@ -20,6 +20,7 @@ class ModerationPipeline:
     def __init__(self, output_dir: str = "safe_images"):
         self.classifier = NSFWClassifier()
         self.detector = ViolationDetector()
+        
         self.segmenter = ViolationSegmenter()
         self.output_dir = output_dir
         os.makedirs(self.output_dir, exist_ok=True)
