@@ -74,7 +74,7 @@ class ModerationPipeline:
             "alcohol_bottle",
             "nudity_explicit",
         }
-        threshold = 0.3
+        threshold = 0.15
 
         if not detections:
             return []
