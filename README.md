@@ -10,4 +10,4 @@ This project uses a fine-tuned YOLOv8 model to detect unsafe objects (alcohol bo
 
 🚀 Inference: Model detects unsafe regions, and the API blurs/flags them
 
-🔌 Integration: Uses detector.py, segmenter.py, and pipeline.py
+🔌 Integration: Uses detector.py, segmenter.py, and pipeline.py 
