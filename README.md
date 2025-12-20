@@ -2,7 +2,7 @@
 # 🧠 Machine Learning
 This project uses a fine-tuned YOLOv8 model to detect unsafe objects (alcohol bottles,knives, etc.) in images.
 
-⚙️ Model: YOLOv8 → detector_best.pt
+⚙️ Model: YOLOv8 → detector_best.pt 
 
 🎓 Training: Done in ml/notebooks/train_detector.ipynb
 
